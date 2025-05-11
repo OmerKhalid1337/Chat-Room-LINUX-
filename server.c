@@ -1,4 +1,3 @@
-server.c
 #include<stdio.h>
 #include<stdlib.h>
 #include<unistd.h>
@@ -10,32 +9,73 @@ server.c
 #include<signal.h>
 
 
+int file;
 typedef struct {
     char usernames[100][32];
     int userCount;
     pthread_mutex_t unameArr;
-    int file;
     pthread_mutex_t fileWr;
+    pthread_mutex_t userIndex;
+    int userExitIndex;
     int msgCount;
     off_t msgOffset; 
 } shared;
 
 shared* data;
 int clientCount = 0;
-void sendConnectMsg(){
+
+void handleConnect(int signum){
   pthread_mutex_lock(&data->fileWr);
 
-  lseek(data->file, data->msgOffset, SEEK_SET);
-  int written = dprintf(data->file, "\n------User \"%s\" has joined the chat room!------\n", data->usernames[clientCount]);
+  lseek(file, data->msgOffset, SEEK_SET);
+  int written = dprintf(file, "\n------User \"%s\" has joined the chat room!------\n", data->usernames[clientCount]);
   data->msgOffset += written;
-
-   clientCount++;
-    data->msgCount++;
+  clientCount++;
+  data->msgCount++;
   pthread_mutex_unlock(&data->fileWr);
 }
 
-void handleConnect(int signum){
-    sendConnectMsg();
+void handleExit(int sig) {
+  pthread_mutex_lock(&data->fileWr);
+  lseek(file, data->msgOffset, SEEK_SET);
+
+  int written = dprintf(file, "\n------User \"%s\" has left the chat room!------\n", data->usernames[data->userExitIndex]);
+  data->msgOffset += written;
+  data->msgCount++;
+  close(file);
+  pthread_mutex_unlock(&data->fileWr);
+  pthread_mutex_lock(&data->unameArr);
+  for(int i=data->userExitIndex;i<data->userCount - 1;i++){
+    strcpy(data->usernames[i],data->usernames[i+1]);
+    
+  }
+  data->userCount--;
+  pthread_mutex_unlock(&data->unameArr);
+  pthread_mutex_unlock(&data->userIndex);
+}
+
+void handle_server_exit(int sig)
+{
+  pthread_mutex_lock(&data->fileWr);
+  lseek(file, data->msgOffset, SEEK_SET);
+
+  int written = dprintf(file, "\n LOST CONNECTION TO CHAT ROOM \n");
+  
+  data->msgOffset += written;
+  data->msgCount++;
+  close(file);
+  pthread_mutex_unlock(&data->fileWr);
+  
+  sleep(2);
+  
+  FILE *fp = popen("pidof ./client","r");
+  int pid;
+  while (fscanf(fp, "%d", &pid) == 1) {
+      printf("%d\n",pid);
+      kill(pid,9);
+    }
+  pclose(fp);
+  exit(0);
 }
 
 int main(){
@@ -43,6 +83,15 @@ int main(){
   if(signal(SIGUSR1,handleConnect) == SIG_ERR){
     printf("error");
   }
+  if(signal(SIGUSR2,handleExit) == SIG_ERR){
+    printf("error");
+  }
+  if(signal(SIGTSTP,handle_server_exit) == SIG_ERR){
+    printf("error");
+  }
+  if(signal(SIGINT,handle_server_exit) == SIG_ERR){
+    printf("error");
+  } 
 
   int fd = shm_open("chatRoom", O_CREAT | O_RDWR, 0666);
   if (fd == -1) {
@@ -65,22 +114,24 @@ int main(){
   pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
   pthread_mutex_init(&data->unameArr, &attr);
   pthread_mutex_init(&data->fileWr, &attr);
+  pthread_mutex_init(&data->userIndex, &attr);
 
-  //data->file = open("chat.txt", O_WRONLY | O_TRUNC | O_CREAT, 0644);
-//   if (data->file < 0) {
+  //file = open("chat.txt", O_WRONLY | O_TRUNC | O_CREAT, 0644);
+//   if (file < 0) {
 //       perror("open for truncate");
 //       exit(1);
 //   }
-//  // close(data->file);  // Truncation is done
+//  // close(file);  // Truncation is done
 
-  data->file = open("chat.txt", O_RDWR | O_CREAT, 0644);
-  if (data->file < 0) {
+  file = open("chat.txt", O_RDWR | O_CREAT, 0644);
+  if (file < 0) {
   perror("open for write");
   exit(1);
 }
-off_t offset = lseek(data->file, 0, SEEK_END);
+pthread_mutex_lock(&data->fileWr);
+off_t offset = lseek(file, 0, SEEK_END);
 data->msgOffset = offset;
-
+pthread_mutex_unlock(&data->fileWr);
   while(1){
       //waits
       sleep(1);
@@ -89,5 +140,5 @@ data->msgOffset = offset;
 
 
   pthread_mutexattr_destroy(&attr);
-  close(data->file);
+  close(file);
 }
