@@ -32,24 +32,29 @@ void handleConnect(int signum){
   data->msgOffset += written;
   clientCount++;
   data->msgCount++;
+
   pthread_mutex_unlock(&data->fileWr);
 }
 
-void handleExit(int sig) {
+void handleClientExit(int sig) {
   pthread_mutex_lock(&data->fileWr);
-  lseek(file, data->msgOffset, SEEK_SET);
 
+  lseek(file, data->msgOffset, SEEK_SET);
   int written = dprintf(file, "\n------User \"%s\" has left the chat room!------\n", data->usernames[data->userExitIndex]);
   data->msgOffset += written;
   data->msgCount++;
-  close(file);
+
   pthread_mutex_unlock(&data->fileWr);
+
+
   pthread_mutex_lock(&data->unameArr);
+
   for(int i=data->userExitIndex;i<data->userCount - 1;i++){
     strcpy(data->usernames[i],data->usernames[i+1]);
-    
   }
   data->userCount--;
+  clientCount--;
+
   pthread_mutex_unlock(&data->unameArr);
   pthread_mutex_unlock(&data->userIndex);
 }
@@ -63,7 +68,6 @@ void handle_server_exit(int sig)
   
   data->msgOffset += written;
   data->msgCount++;
-  close(file);
   pthread_mutex_unlock(&data->fileWr);
   
   sleep(2);
@@ -71,7 +75,6 @@ void handle_server_exit(int sig)
   FILE *fp = popen("pidof ./client","r");
   int pid;
   while (fscanf(fp, "%d", &pid) == 1) {
-      printf("%d\n",pid);
       kill(pid,9);
     }
   pclose(fp);
@@ -79,11 +82,32 @@ void handle_server_exit(int sig)
 }
 
 int main(){
+
+  FILE* fp = popen("pidof ./server", "r");
+    int pid;
+
+    char buffer[1024];
+    fgets(buffer, sizeof(buffer), fp);
+    
+    int count = 0;
+    char* token = strtok(buffer, " \n");
+    while (token) {
+        count++;
+        token = strtok(NULL, " \n");
+    }
+
+    if(count > 1){
+        printf("\n  A SERVER IS ALREADY RUNNING \n");
+        fflush(stdout);
+        exit(0);
+    }
+  pclose(fp);
+
 	printf("Server is running...\n");
   if(signal(SIGUSR1,handleConnect) == SIG_ERR){
     printf("error");
   }
-  if(signal(SIGUSR2,handleExit) == SIG_ERR){
+  if(signal(SIGUSR2,handleClientExit) == SIG_ERR){
     printf("error");
   }
   if(signal(SIGTSTP,handle_server_exit) == SIG_ERR){
@@ -116,12 +140,6 @@ int main(){
   pthread_mutex_init(&data->fileWr, &attr);
   pthread_mutex_init(&data->userIndex, &attr);
 
-  //file = open("chat.txt", O_WRONLY | O_TRUNC | O_CREAT, 0644);
-//   if (file < 0) {
-//       perror("open for truncate");
-//       exit(1);
-//   }
-//  // close(file);  // Truncation is done
 
   file = open("chat.txt", O_RDWR | O_CREAT, 0644);
   if (file < 0) {
