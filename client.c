@@ -39,7 +39,7 @@ void* reading(void* args) {
             }
             pthread_mutex_unlock(&data->fileWr);
             fflush(stdout);
-            local_msgCount = data->msgCount;
+            local_msgCount++;
         }
         usleep(500000); // Sleep for 0.5 seconds
     }
@@ -65,18 +65,23 @@ void* writing(void* args) {
 }
 
 void connect() {
-    int shm_fd = shm_open("chatRoom", O_RDWR, 0666);
-    if (shm_fd == -1) {
-        perror("Server not running or shared memory not available");
-        exit(1);
+
+    FILE* fp = popen("pidof ./server", "r");
+    int pid;
+    if(fscanf(fp, "%d", &pid) == EOF){
+        printf("\n SERVER NOT FOUND \n");
+        fflush(stdout);
+        exit(0);
     }
+    pclose(fp);
 
     while (1) {
+
         printf("Enter username for chat room: ");
         fgets(user, sizeof(user), stdin);
-        user[strcspn(user, "\n")] = '\0'; // Strip newline
+        user[strcspn(user, "\n")] = '\0';
 
-        int isDuplicate = 0;
+        int isDuplicate = 0;  //tls
 
         pthread_mutex_lock(&data->unameArr);
         for (int i = 0; i < data->userCount; i++) {
@@ -89,16 +94,13 @@ void connect() {
         if (isDuplicate) {
             printf("Username already taken. Please try another one.\n");
             pthread_mutex_unlock(&data->unameArr);
-        } else {
+        } 
+        else {
             strcpy(data->usernames[data->userCount], user);
             data->userCount++;
 
             // Notify server
-            FILE* fp = popen("pidof ./server", "r");
-            int pid;
-            fscanf(fp, "%d", &pid);
             kill(pid, 10);
-
             pthread_mutex_unlock(&data->unameArr);
             break; // Exit loop if username is unique
         }
@@ -118,10 +120,9 @@ void handle_exit(int sig) {
             break;
         }
     }
-    pthread_mutex_unlock(&data->userIndex);
 
+    // shm_unlink("chatRoom");
     kill(pid, 12);
-    shm_unlink("chatRoom");
     pthread_cancel(reader);
     pthread_cancel(writer);
     exit(0);
@@ -146,7 +147,7 @@ int main() {
         exit(1);
     }
 
-    writeFile = open("chat.txt", O_WRONLY | O_APPEND);
+    writeFile = open("chat.txt", O_WRONLY);
     if (writeFile < 0) {
         perror("open for write");
         exit(1);
