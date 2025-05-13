@@ -75,6 +75,7 @@ void handle_server_exit(int sig)
   FILE *fp = popen("pidof ./client","r");
   int pid;
   while (fscanf(fp, "%d", &pid) == 1) {
+      // printf("%d\n",pid);
       kill(pid,9);
     }
   pclose(fp);
@@ -140,6 +141,12 @@ int main(){
   pthread_mutex_init(&data->fileWr, &attr);
   pthread_mutex_init(&data->userIndex, &attr);
 
+  //file = open("chat.txt", O_WRONLY | O_TRUNC | O_CREAT, 0644);
+//   if (file < 0) {
+//       perror("open for truncate");
+//       exit(1);
+//   }
+//  // close(file);  // Truncation is done
 
   file = open("chat.txt", O_RDWR | O_CREAT, 0644);
   if (file < 0) {
@@ -160,3 +167,4 @@ pthread_mutex_unlock(&data->fileWr);
   pthread_mutexattr_destroy(&attr);
   close(file);
 }
+
