@@ -32,8 +32,7 @@ void* reading(void* args) {
     while (1) {
         if (local_msgCount < data->msgCount) {
             pthread_mutex_lock(&data->fileWr);
-            lseek(readFile, 0, SEEK_SET);
-            while ((bytesRead = read(readFile, buffer, sizeof(buffer) - 1)) > 0) {
+            if ((bytesRead = read(readFile, buffer, sizeof(buffer) - 1)) > 0) {
                 buffer[bytesRead] = '\0';
                 printf("%s", buffer);
             }
@@ -52,7 +51,9 @@ void* writing(void* args) {
         if (buffer[0] == '\n') {
             continue;
         }
-
+        printf("\033[A");
+        printf("\033[2K");
+        printf("\r");
         buffer[strcspn(buffer, "\n")] = '\0'; // Strip newline
 
         pthread_mutex_lock(&data->fileWr);
@@ -166,4 +167,3 @@ int main() {
 
     return 0;
 }
-
